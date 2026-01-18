@@ -10,11 +10,13 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"net/netip"
 
 	"golang.org/x/sys/windows"
 
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
+	"golang.zx2c4.com/wireguard/winipcfg"
 
 	"golang.zx2c4.com/wireguard/tun"
 )
@@ -25,15 +27,20 @@ const (
 )
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <interface name> <mtu> <config>\n", os.Args[0])
+	if len(os.Args) != 7 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <interface name> <mtu> <config> <ipv4> <ipv6> <endpoint>\n", os.Args[0])
 		os.Exit(ExitSetupFailed)
 	}
 	interfaceName := os.Args[1]
 	mtu := os.Args[2]
 	config := os.Args[3]
+	ipv4 := os.Args[4]
+	ipv6 := os.Args[5]
+	endpoint := os.Args[6]
 
 	parsedMtu, err := strconv.Atoi(mtu)
+	parsedIpv4 := netip.MustParsePrefix(ipv4)
+	parsedIpv6 := netip.MustParsePrefix(ipv6)
 
 	logger := device.NewLogger(
 		device.LogLevelVerbose,
@@ -65,6 +72,24 @@ func main() {
 		os.Exit(ExitSetupFailed)
 	}
 	logger.Verbosef("Device started")
+
+	type luidGetter interface {
+		LUID() uint64
+	}
+
+	if tunLUID, ok := tun.(luidGetter); ok {
+		luid := winipcfg.LUID(tunLUID.LUID())
+		luid.SetIPAddresses([]netip.Prefix{parsedIpv4, parsedIpv6})
+
+		routes, _ := winipcfg.GetIPForwardTable2(windows.AF_INET)
+		for _, route := range routes {
+			if route.DestinationPrefix.PrefixLength == 0 {
+				route.InterfaceLUID.AddRoute(netip.MustParsePrefix(endpoint + "/32"), route.NextHop.Addr(), 0)
+			}
+		}
+		luid.AddRoute(netip.MustParsePrefix("0.0.0.0/0"), netip.IPv4Unspecified(), 0)
+		luid.AddRoute(netip.MustParsePrefix("::/0"), netip.IPv6Unspecified(), 0)
+	}
 
 	term := make(chan os.Signal, 1)
 
