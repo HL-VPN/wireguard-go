@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"golang.org/x/sys/windows"
 
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/ipc"
 
 	"golang.zx2c4.com/wireguard/tun"
 )
@@ -25,12 +25,15 @@ const (
 )
 
 func main() {
-	if len(os.Args) != 2 {
+	if len(os.Args) != 4 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <interface name> <mtu> <config>\n", os.Args[0])
 		os.Exit(ExitSetupFailed)
 	}
 	interfaceName := os.Args[1]
+	mtu := os.Args[2]
+	config := os.Args[3]
 
-	fmt.Fprintln(os.Stderr, "Warning: this is a test program for Windows, mainly used for debugging this Go package. For a real WireGuard for Windows client, the repo you want is <https://git.zx2c4.com/wireguard-windows/>, which includes this code as a module.")
+	parsedMtu, err := strconv.Atoi(mtu)
 
 	logger := device.NewLogger(
 		device.LogLevelVerbose,
@@ -38,7 +41,7 @@ func main() {
 	)
 	logger.Verbosef("Starting wireguard-go version %s", Version)
 
-	tun, err := tun.CreateTUN(interfaceName, 0)
+	tun, err := tun.CreateTUN(interfaceName, parsedMtu)
 	if err == nil {
 		realInterfaceName, err2 := tun.Name()
 		if err2 == nil {
@@ -50,6 +53,12 @@ func main() {
 	}
 
 	device := device.NewDevice(tun, conn.NewDefaultBind(), logger)
+	err = device.IpcSet(config)
+	if err != nil {
+		logger.Errorf("Failed to configure: %v", err)
+		os.Exit(ExitSetupFailed)
+	}
+
 	err = device.Up()
 	if err != nil {
 		logger.Errorf("Failed to bring up device: %v", err)
@@ -57,26 +66,7 @@ func main() {
 	}
 	logger.Verbosef("Device started")
 
-	uapi, err := ipc.UAPIListen(interfaceName)
-	if err != nil {
-		logger.Errorf("Failed to listen on uapi socket: %v", err)
-		os.Exit(ExitSetupFailed)
-	}
-
-	errs := make(chan error)
 	term := make(chan os.Signal, 1)
-
-	go func() {
-		for {
-			conn, err := uapi.Accept()
-			if err != nil {
-				errs <- err
-				return
-			}
-			go device.IpcHandle(conn)
-		}
-	}()
-	logger.Verbosef("UAPI listener started")
 
 	// wait for program to terminate
 
@@ -86,13 +76,11 @@ func main() {
 
 	select {
 	case <-term:
-	case <-errs:
 	case <-device.Wait():
 	}
 
 	// clean up
 
-	uapi.Close()
 	device.Close()
 
 	logger.Verbosef("Shutting down")
