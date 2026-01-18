@@ -79,6 +79,16 @@ func main() {
 
 	if tunLUID, ok := tun.(luidGetter); ok {
 		luid := winipcfg.LUID(tunLUID.LUID())
+
+		if ipv4Interface, err := luid.IPInterface(windows.AF_INET); err == nil {
+			ipv4Interface.NLMTU = uint32(parsedMtu)
+			ipv4Interface.Set()
+		}
+		if ipv6Interface, err := luid.IPInterface(windows.AF_INET6); err == nil {
+			ipv6Interface.NLMTU = uint32(parsedMtu)
+			ipv6Interface.Set()
+		}
+
 		luid.SetIPAddresses([]netip.Prefix{parsedIpv4, parsedIpv6})
 
 		routes, _ := winipcfg.GetIPForwardTable2(windows.AF_INET)
