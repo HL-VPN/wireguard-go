@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"golang.org/x/sys/unix"
 	"golang.zx2c4.com/wireguard/conn"
@@ -24,16 +25,19 @@ const (
 )
 
 func main() {
-	var interfaceName string
-	if len(os.Args) != 2 {
-		fmt.Printf("Usage: %s INTERFACE-NAME\n", os.Args[0])
+	if len(os.Args) != 4 {
+		fmt.Printf("Usage: %s <interface name> <mtu> <config>\n", os.Args[0])
 		return
 	}
-	interfaceName = os.Args[1]
+	interfaceName := os.Args[1]
+	mtu := os.Args[2]
+	config := os.Args[3]
+
+	parsedMtu, err := strconv.Atoi(mtu)
 
 	// open TUN device
 
-	tdev, err := tun.CreateTUN(interfaceName, device.DefaultMTU)
+	tdev, err := tun.CreateTUN(interfaceName, parsedMtu)
 	if err == nil {
 		realInterfaceName, err2 := tdev.Name()
 		if err2 == nil {
@@ -54,6 +58,11 @@ func main() {
 	}
 
 	device := device.NewDevice(tdev, conn.NewDefaultBind(), logger)
+	err = device.IpcSet(config)
+	if err != nil {
+		logger.Errorf("Failed to configure: %v", err)
+		os.Exit(ExitSetupFailed)
+	}
 
 	logger.Verbosef("Device started")
 
