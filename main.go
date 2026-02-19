@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	//"net/netip"
 
 	"golang.org/x/sys/unix"
 	"golang.zx2c4.com/wireguard/conn"
@@ -25,15 +26,20 @@ const (
 )
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Printf("Usage: %s <interface name> <mtu> <config>\n", os.Args[0])
+	if len(os.Args) != 7 {
+		fmt.Printf("Usage: %s <interface name> <mtu> <config> <ipv4> <ipv6> <endpoint>\n", os.Args[0])
 		return
 	}
 	interfaceName := os.Args[1]
 	mtu := os.Args[2]
 	config := os.Args[3]
+	//ipv4 := os.Args[4]
+	//ipv6 := os.Args[5]
+	//endpoint := os.Args[6]
 
 	parsedMtu, err := strconv.Atoi(mtu)
+	//parsedIpv4 := netip.MustParsePrefix(ipv4)
+	//parsedIpv6 := netip.MustParsePrefix(ipv6)
 
 	// open TUN device
 
